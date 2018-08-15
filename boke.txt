@@ -1,0 +1,623 @@
+<p>　　一、前面说了bean的容器初始化，后面当然是说bean的加载。这里还是不讲解ApplicationContext的bean的加载过程，还是通过最基础的XmlBeanFactory来进行讲解，主要是熟悉通过BeanFactory是怎么实现class的实例化的。</p>
+<p>　　二、声明一下：XmlBeanFactory和ApplicationContext的不同在与，ApplicationContext在容器初始化的时候，就做了很多准备操作。而XmlBeanFactory是在获取bean的时候才会调用初始化的东西。这一点是XmlBeanFactory做的不好的地方。比如：BeanPostProcessor、InitializingBean和标签init-method等，这些都是在bean加载的时候完成而不是在初始化的时候。</p>
+<p>　　三、bean的加载源码解读</p>
+<p>　　1）bean的获取方式</p>
+<div class="cnblogs_code">
+<pre><span style="color: #000000;">package com.pinnet.bean;
+
+import com.pinnet.customLabel.User;
+import org.springframework.beans.factory.xml.XmlBeanFactory;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.core.io.Resource;
+
+</span><span style="color: #0000ff;">public</span> <span style="color: #0000ff;">class</span><span style="color: #000000;"> Test {
+
+    </span><span style="color: #0000ff;">public</span> <span style="color: #0000ff;">static</span> <span style="color: #0000ff;">void</span><span style="color: #000000;"> main(String[] args) {
+        </span><span style="color: #008000;">//</span><span style="color: #008000;">读取资源</span>
+        Resource resource = <span style="color: #0000ff;">new</span> ClassPathResource(<span style="color: #800000;">"</span><span style="color: #800000;">spring-bean.xml</span><span style="color: #800000;">"</span><span style="color: #000000;">);
+        </span><span style="color: #008000;">//</span><span style="color: #008000;">初始化容器</span>
+        XmlBeanFactory xmlBeanFactory = <span style="color: #0000ff;">new</span><span style="color: #000000;"> XmlBeanFactory(resource);
+        </span><span style="color: #008000;">//</span><span style="color: #008000;">获取对应的bean</span>
+        xmlBeanFactory.<span style="text-decoration: underline; background-color: #33cccc;"><strong>getBean</strong></span>(<span style="color: #800000;">"</span><span style="color: #800000;">user</span><span style="color: #800000;">"</span>, User.<span style="color: #0000ff;">class</span><span style="color: #000000;">);
+    }
+}</span></pre>
+</div>
+<p>　　2）getBean</p>
+<div class="cnblogs_code">
+<pre><span style="color: #0000ff;">　　 public</span> &lt;T&gt; T getBean(String name, Class&lt;T&gt; requiredType) <span style="color: #0000ff;">throws</span><span style="color: #000000;"> BeansException {
+        </span><span style="color: #0000ff;">return</span> <span style="color: #0000ff;">this</span>.doGetBean(name, requiredType, (Object[])<span style="color: #0000ff;">null</span>, <span style="color: #0000ff;">false</span><span style="color: #000000;">);
+    }
+    </span><span style="color: #0000ff;">protected</span> &lt;T&gt; T doGetBean(String name, Class&lt;T&gt; requiredType, <span style="color: #0000ff;">final</span> Object[] args, <span style="color: #0000ff;">boolean</span> typeCheckOnly) <span style="color: #0000ff;">throws</span><span style="color: #000000;"> BeansException {
+        </span><span style="color: #008000;">//</span><span style="color: #008000;">检查是否存在别名，采用存在别名的方式</span>
+        <span style="color: #0000ff;">final</span> String beanName = <span style="color: #0000ff;">this</span><span style="color: #000000;">.transformedBeanName(name);
+        </span><span style="color: #008000;">//</span><span style="color: #008000;">通过单例的map来获取实例，当然这个第一次是没有的，是在加载过后放入到单例的map里面</span>
+        Object sharedInstance = <span style="color: #0000ff;">this</span><span style="color: #000000;">.<span style="text-decoration: underline;"><strong><span style="background-color: #33cccc;">getSingleton</span></strong></span>(beanName);
+        Object bean;
+        </span><span style="color: #0000ff;">if</span> (sharedInstance != <span style="color: #0000ff;">null</span> &amp;&amp; args == <span style="color: #0000ff;">null</span><span style="color: #000000;">) {
+            </span><span style="color: #0000ff;">if</span> (<span style="color: #0000ff;">this</span><span style="color: #000000;">.logger.isDebugEnabled()) {
+                </span><span style="color: #0000ff;">if</span> (<span style="color: #0000ff;">this</span><span style="color: #000000;">.isSingletonCurrentlyInCreation(beanName)) {
+                    </span><span style="color: #0000ff;">this</span>.logger.debug("Returning eagerly cached instance of singleton bean '" + beanName + "' that is not fully initialized yet - a consequence of a circular reference"<span style="color: #000000;">);
+                } </span><span style="color: #0000ff;">else</span><span style="color: #000000;"> {
+                    </span><span style="color: #0000ff;">this</span>.logger.debug("Returning cached instance of singleton bean '" + beanName + "'"<span style="color: #000000;">);
+                }
+            }
+            </span><span style="color: #008000;">//</span><span style="color: #008000;">如果存在bean的话，看是否是FactoryBean,如果是则通过factoryBean的方式加载</span>
+            bean = <span style="color: #0000ff;">this</span>.getObjectForBeanInstance(sharedInstance, name, beanName, (RootBeanDefinition)<span style="color: #0000ff;">null</span><span style="color: #000000;">);
+        } </span><span style="color: #0000ff;">else</span><span style="color: #000000;"> {
+            </span><span style="color: #0000ff;">if</span> (<span style="color: #0000ff;">this</span><span style="color: #000000;">.isPrototypeCurrentlyInCreation(beanName)) {
+                </span><span style="color: #0000ff;">throw</span> <span style="color: #0000ff;">new</span><span style="color: #000000;"> BeanCurrentlyInCreationException(beanName);
+            }
+            </span><span style="color: #008000;">//</span><span style="color: #008000;">如果存在父类bean的话，现价在父类</span>
+            BeanFactory parentBeanFactory = <span style="color: #0000ff;">this</span><span style="color: #000000;">.getParentBeanFactory();
+            </span><span style="color: #0000ff;">if</span> (parentBeanFactory != <span style="color: #0000ff;">null</span> &amp;&amp; !<span style="color: #0000ff;">this</span><span style="color: #000000;">.containsBeanDefinition(beanName)) {
+                String nameToLookup </span>= <span style="color: #0000ff;">this</span><span style="color: #000000;">.originalBeanName(name);
+                </span><span style="color: #0000ff;">if</span> (args != <span style="color: #0000ff;">null</span><span style="color: #000000;">) {
+                    </span><span style="color: #0000ff;">return</span><span style="color: #000000;"> parentBeanFactory.getBean(nameToLookup, args);
+                }
+
+                </span><span style="color: #0000ff;">return</span><span style="color: #000000;"> parentBeanFactory.getBean(nameToLookup, requiredType);
+            }
+            </span><span style="color: #0000ff;">if</span> (!<span style="color: #000000;">typeCheckOnly) {
+                </span><span style="color: #0000ff;">this</span><span style="color: #000000;">.markBeanAsCreated(beanName);
+            }
+            </span><span style="color: #008000;">//</span><span style="color: #008000;">获取在容器里面初始化的BeanDefinition</span>
+            <span style="color: #0000ff;">final</span> RootBeanDefinition mbd = <span style="color: #0000ff;">this</span><span style="color: #000000;">.<span style="text-decoration: underline;"><strong><span style="background-color: #33cccc;">getMergedLocalBeanDefinition</span></strong></span>(beanName);
+            </span><span style="color: #0000ff;">this</span><span style="color: #000000;">.checkMergedBeanDefinition(mbd, beanName, args);
+            String[] dependsOn </span>=<span style="color: #000000;"> mbd.getDependsOn();
+            String scopeName;
+            </span><span style="color: #0000ff;">if</span> (dependsOn != <span style="color: #0000ff;">null</span><span style="color: #000000;">) {
+                String[] var14 </span>=<span style="color: #000000;"> dependsOn;
+                </span><span style="color: #0000ff;">int</span> var13 =<span style="color: #000000;"> dependsOn.length;
+                </span><span style="color: #0000ff;">for</span>(<span style="color: #0000ff;">int</span> var12 = 0; var12 &lt; var13; ++<span style="color: #000000;">var12) {
+                    scopeName </span>=<span style="color: #000000;"> var14[var12];
+                    </span><span style="color: #0000ff;">this</span><span style="color: #000000;">.getBean(scopeName);
+                    </span><span style="color: #0000ff;">this</span><span style="color: #000000;">.registerDependentBean(scopeName, beanName);
+                }
+            }
+
+            </span><span style="color: #008000;">//</span><span style="color: #008000;">所有配置默认是为单例的</span>
+            <span style="color: #0000ff;">if</span><span style="color: #000000;"> (mbd.isSingleton()) {
+                sharedInstance </span>= <span style="color: #0000ff;">this</span>.<span style="text-decoration: underline;"><strong><span style="background-color: #33cccc;">getSingleton</span></strong></span>(beanName, <span style="color: #0000ff;">new</span><span style="color: #000000;"> ObjectFactory() {
+                    </span><span style="color: #0000ff;">public</span> Object getObject() <span style="color: #0000ff;">throws</span><span style="color: #000000;"> BeansException {
+                        </span><span style="color: #0000ff;">try</span><span style="color: #000000;"> {
+                            </span><span style="color: #008000;">//</span><span style="color: #008000;">这里是整个bean加载的核心</span>
+                            <span style="color: #0000ff;">return</span> AbstractBeanFactory.<span style="color: #0000ff;">this</span><span style="color: #000000;">.<span style="text-decoration: underline;"><strong><span style="background-color: #33cccc;">createBean</span></strong></span>(beanName, mbd, args);
+                        } </span><span style="color: #0000ff;">catch</span><span style="color: #000000;"> (BeansException var2) {
+                            AbstractBeanFactory.</span><span style="color: #0000ff;">this</span><span style="color: #000000;">.destroySingleton(beanName);
+                            </span><span style="color: #0000ff;">throw</span><span style="color: #000000;"> var2;
+                        }
+                    }
+                });
+                </span><span style="color: #008000;">//</span><span style="color: #008000;">如果存在bean的话，看是否是FactoryBean,如果是则通过factoryBean的方式加载</span>
+                bean = <span style="color: #0000ff;">this</span><span style="color: #000000;">.getObjectForBeanInstance(sharedInstance, name, beanName, mbd);
+            } </span><span style="color: #0000ff;">else</span> <span style="color: #0000ff;">if</span><span style="color: #000000;"> (mbd.isPrototype()) {
+                scopeName </span>= <span style="color: #0000ff;">null</span><span style="color: #000000;">;
+                Object prototypeInstance;
+                </span><span style="color: #0000ff;">try</span><span style="color: #000000;"> {
+                    </span><span style="color: #0000ff;">this</span><span style="color: #000000;">.beforePrototypeCreation(beanName);
+                    prototypeInstance </span>= <span style="color: #0000ff;">this</span><span style="color: #000000;">.createBean(beanName, mbd, args);
+                } </span><span style="color: #0000ff;">finally</span><span style="color: #000000;"> {
+                    </span><span style="color: #0000ff;">this</span><span style="color: #000000;">.afterPrototypeCreation(beanName);
+                }
+                </span><span style="color: #008000;">//</span><span style="color: #008000;">如果存在bean的话，看是否是FactoryBean,如果是则通过factoryBean的方式加载</span>
+                bean = <span style="color: #0000ff;">this</span><span style="color: #000000;">.getObjectForBeanInstance(prototypeInstance, name, beanName, mbd);
+            } </span><span style="color: #0000ff;">else</span><span style="color: #000000;"> {
+                scopeName </span>=<span style="color: #000000;"> mbd.getScope();
+                Scope scope </span>= (Scope)<span style="color: #0000ff;">this</span><span style="color: #000000;">.scopes.get(scopeName);
+                </span><span style="color: #0000ff;">if</span> (scope == <span style="color: #0000ff;">null</span><span style="color: #000000;">) {
+                    </span><span style="color: #0000ff;">throw</span> <span style="color: #0000ff;">new</span> IllegalStateException("No Scope registered for scope '" + scopeName + "'"<span style="color: #000000;">);
+                }
+                </span><span style="color: #0000ff;">try</span><span style="color: #000000;"> {
+                    Object scopedInstance </span>= scope.get(beanName, <span style="color: #0000ff;">new</span><span style="color: #000000;"> ObjectFactory() {
+                        </span><span style="color: #0000ff;">public</span> Object getObject() <span style="color: #0000ff;">throws</span><span style="color: #000000;"> BeansException {
+                            AbstractBeanFactory.</span><span style="color: #0000ff;">this</span><span style="color: #000000;">.beforePrototypeCreation(beanName);
+                            Object var2;
+                            </span><span style="color: #0000ff;">try</span><span style="color: #000000;"> {
+                                var2 </span>= AbstractBeanFactory.<span style="color: #0000ff;">this</span><span style="color: #000000;">.createBean(beanName, mbd, args);
+                            } </span><span style="color: #0000ff;">finally</span><span style="color: #000000;"> {
+                                AbstractBeanFactory.</span><span style="color: #0000ff;">this</span><span style="color: #000000;">.afterPrototypeCreation(beanName);
+                            }
+                            </span><span style="color: #0000ff;">return</span><span style="color: #000000;"> var2;
+                        }
+                    });
+                    bean </span>= <span style="color: #0000ff;">this</span><span style="color: #000000;">.getObjectForBeanInstance(scopedInstance, name, beanName, mbd);
+                } </span><span style="color: #0000ff;">catch</span><span style="color: #000000;"> (IllegalStateException var19) {
+                    </span><span style="color: #0000ff;">throw</span> <span style="color: #0000ff;">new</span> BeanCreationException(beanName, "Scope '" + scopeName + "' is not active for the current thread; " + "consider defining a scoped proxy for this bean if you intend to refer to it from a singleton"<span style="color: #000000;">, var19);
+                }
+            }
+        }
+
+        </span><span style="color: #0000ff;">if</span> (requiredType != <span style="color: #0000ff;">null</span> &amp;&amp; bean != <span style="color: #0000ff;">null</span> &amp;&amp; !<span style="color: #000000;">requiredType.isAssignableFrom(bean.getClass())) {
+            </span><span style="color: #0000ff;">try</span><span style="color: #000000;"> {
+                </span><span style="color: #0000ff;">return</span> <span style="color: #0000ff;">this</span><span style="color: #000000;">.getTypeConverter().convertIfNecessary(bean, requiredType);
+            } </span><span style="color: #0000ff;">catch</span><span style="color: #000000;"> (TypeMismatchException var20) {
+                </span><span style="color: #0000ff;">if</span> (<span style="color: #0000ff;">this</span><span style="color: #000000;">.logger.isDebugEnabled()) {
+                    </span><span style="color: #0000ff;">this</span>.logger.debug("Failed to convert bean '" + name + "' to required type [" + ClassUtils.getQualifiedName(requiredType) + "]"<span style="color: #000000;">, var20);
+                }
+                </span><span style="color: #0000ff;">throw</span> <span style="color: #0000ff;">new</span><span style="color: #000000;"> BeanNotOfRequiredTypeException(name, requiredType, bean.getClass());
+            }
+        } </span><span style="color: #0000ff;">else</span><span style="color: #000000;"> {
+            </span><span style="color: #0000ff;">return</span><span style="color: #000000;"> bean;
+        }
+    }</span></pre>
+</div>
+<p>　　3）getSingleton、getMergedLocalBeanDefinition、createBean</p>
+<p>　　a、getSingleton</p>
+<div class="cnblogs_code">
+<pre><span style="color: #0000ff;">public</span><span style="color: #000000;"> Object getSingleton(String beanName) {
+        </span><span style="color: #0000ff;">return</span> <span style="color: #0000ff;">this</span>.getSingleton(beanName, <span style="color: #0000ff;">true</span><span style="color: #000000;">);
+    }
+
+    </span><span style="color: #0000ff;">protected</span> Object getSingleton(String beanName, <span style="color: #0000ff;">boolean</span><span style="color: #000000;"> allowEarlyReference) {
+        </span><span style="color: #008000;">//</span><span style="color: #008000;">singletonObjects是一个map，主要是目的是存放单例bean</span>
+        Object singletonObject = <span style="color: #0000ff;">this</span><span style="color: #000000;">.<span style="text-decoration: underline;"><strong><span style="background-color: #33cccc;">singletonObjects</span></strong></span>.get(beanName);
+        </span><span style="color: #0000ff;">if</span> (singletonObject == <span style="color: #0000ff;">null</span><span style="color: #000000;">) {
+            Map var4 </span>= <span style="color: #0000ff;">this</span><span style="color: #000000;">.singletonObjects;
+            </span><span style="color: #0000ff;">synchronized</span>(<span style="color: #0000ff;">this</span><span style="color: #000000;">.singletonObjects) {
+                </span><span style="color: #008000;">//</span><span style="color: #008000;">如果singletonObjects没有，则在earlySingletonObjects去找</span>
+                singletonObject = <span style="color: #0000ff;">this</span><span style="color: #000000;">.<strong><span style="text-decoration: underline;"><span style="background-color: #33cccc;">earlySingletonObjects</span></span></strong>.get(beanName);
+                </span><span style="color: #0000ff;">if</span> (singletonObject == <span style="color: #0000ff;">null</span> &amp;&amp;<span style="color: #000000;"> allowEarlyReference) {
+                    ObjectFactory singletonFactory </span>= (ObjectFactory)<span style="color: #0000ff;">this</span><span style="color: #000000;">.singletonFactories.get(beanName);
+                    </span><span style="color: #0000ff;">if</span> (singletonFactory != <span style="color: #0000ff;">null</span><span style="color: #000000;">) {
+                        singletonObject </span>=<span style="color: #000000;"> singletonFactory.getObject();
+                        </span><span style="color: #0000ff;">this</span><span style="color: #000000;">.earlySingletonObjects.put(beanName, singletonObject);
+                        </span><span style="color: #0000ff;">this</span><span style="color: #000000;">.singletonFactories.remove(beanName);
+                    }
+                }
+            }
+        }
+        </span><span style="color: #0000ff;">return</span> singletonObject != NULL_OBJECT ? singletonObject : <span style="color: #0000ff;">null</span><span style="color: #000000;">;
+    }</span></pre>
+</div>
+<p>　　b、getMergedLocalBeanDefinition</p>
+<div class="cnblogs_code">
+<pre><span style="color: #0000ff;">　　 protected</span> RootBeanDefinition getMergedLocalBeanDefinition(String beanName) <span style="color: #0000ff;">throws</span><span style="color: #000000;"> BeansException {
+        </span><span style="color: #008000;">//</span><span style="color: #008000;">默认在mergedBeanDefinitions（map）里面查找</span>
+        RootBeanDefinition mbd = (RootBeanDefinition)<span style="color: #0000ff;">this</span><span style="color: #000000;">.<span style="text-decoration: underline;"><strong><span style="background-color: #33cccc;">mergedBeanDefinitions</span></strong></span>.get(beanName);
+        </span><span style="color: #008000;">//</span><span style="color: #008000;">注意这里的getBeanDefinition，这里是从beanDefinitionMap里面取查找的，整个在容器加载的时候说明了</span>
+        <span style="color: #0000ff;">return</span> mbd != <span style="color: #0000ff;">null</span> ? mbd : <span style="color: #0000ff;">this</span>.getMergedBeanDefinition(beanName, <span style="color: #0000ff;">this</span><span style="color: #000000;">.<span style="text-decoration: underline;"><strong><span style="background-color: #33cccc;">getBeanDefinition</span></strong></span>(beanName));
+    }
+
+    </span><span style="color: #0000ff;">protected</span> RootBeanDefinition getMergedBeanDefinition(String beanName, BeanDefinition bd) <span style="color: #0000ff;">throws</span><span style="color: #000000;"> BeanDefinitionStoreException {
+        </span><span style="color: #0000ff;">return</span> <span style="color: #0000ff;">this</span>.getMergedBeanDefinition(beanName, bd, (BeanDefinition)<span style="color: #0000ff;">null</span><span style="color: #000000;">);
+    }
+
+    </span><span style="color: #0000ff;">protected</span> RootBeanDefinition getMergedBeanDefinition(String beanName, BeanDefinition bd, BeanDefinition containingBd) <span style="color: #0000ff;">throws</span><span style="color: #000000;"> BeanDefinitionStoreException {
+        Map var4 </span>= <span style="color: #0000ff;">this</span><span style="color: #000000;">.mergedBeanDefinitions;
+        </span><span style="color: #0000ff;">synchronized</span>(<span style="color: #0000ff;">this</span><span style="color: #000000;">.mergedBeanDefinitions) {
+            RootBeanDefinition mbd </span>= <span style="color: #0000ff;">null</span><span style="color: #000000;">;
+            </span><span style="color: #0000ff;">if</span> (containingBd == <span style="color: #0000ff;">null</span><span style="color: #000000;">) {
+                mbd </span>= (RootBeanDefinition)<span style="color: #0000ff;">this</span><span style="color: #000000;">.mergedBeanDefinitions.get(beanName);
+            }
+
+            </span><span style="color: #0000ff;">if</span> (mbd == <span style="color: #0000ff;">null</span><span style="color: #000000;">) {
+                </span><span style="color: #0000ff;">if</span> (bd.getParentName() == <span style="color: #0000ff;">null</span><span style="color: #000000;">) {
+                    </span><span style="color: #0000ff;">if</span> (bd <span style="color: #0000ff;">instanceof</span><span style="color: #000000;"> RootBeanDefinition) {
+                        mbd </span>=<span style="color: #000000;"> ((RootBeanDefinition)bd).cloneBeanDefinition();
+                    } </span><span style="color: #0000ff;">else</span><span style="color: #000000;"> {
+                        </span><span style="color: #008000;">//</span><span style="color: #008000;">将其他类型BeanDefinition包装成RootBeanDefinition</span>
+                        mbd = <span style="color: #0000ff;">new</span><span style="color: #000000;"><span style="text-decoration: underline;"><strong><span style="background-color: #33cccc;"> RootBeanDefinition</span></strong></span>(bd);
+                    }
+                } </span><span style="color: #0000ff;">else</span><span style="color: #000000;"> {
+                    </span><span style="color: #008000;">//</span><span style="color: #008000;">父类bean不为空的操作</span>
+<span style="color: #000000;">                    BeanDefinition pbd;
+                    </span><span style="color: #0000ff;">try</span><span style="color: #000000;"> {
+                        String parentBeanName </span>= <span style="color: #0000ff;">this</span><span style="color: #000000;">.transformedBeanName(bd.getParentName());
+                        </span><span style="color: #0000ff;">if</span> (!<span style="color: #000000;">beanName.equals(parentBeanName)) {
+                            pbd </span>= <span style="color: #0000ff;">this</span><span style="color: #000000;">.getMergedBeanDefinition(parentBeanName);
+                        } </span><span style="color: #0000ff;">else</span><span style="color: #000000;"> {
+                            </span><span style="color: #0000ff;">if</span> (!(<span style="color: #0000ff;">this</span>.getParentBeanFactory() <span style="color: #0000ff;">instanceof</span><span style="color: #000000;"> ConfigurableBeanFactory)) {
+                                </span><span style="color: #0000ff;">throw</span> <span style="color: #0000ff;">new</span> NoSuchBeanDefinitionException(bd.getParentName(), "Parent name '" + bd.getParentName() + "' is equal to bean name '" + beanName + "': cannot be resolved without an AbstractBeanFactory parent"<span style="color: #000000;">);
+                            }
+
+                            pbd </span>= ((ConfigurableBeanFactory)<span style="color: #0000ff;">this</span><span style="color: #000000;">.getParentBeanFactory()).getMergedBeanDefinition(parentBeanName);
+                        }
+                    } </span><span style="color: #0000ff;">catch</span><span style="color: #000000;"> (NoSuchBeanDefinitionException var8) {
+                        </span><span style="color: #0000ff;">throw</span> <span style="color: #0000ff;">new</span> BeanDefinitionStoreException(bd.getResourceDescription(), beanName, "Could not resolve parent bean definition '" + bd.getParentName() + "'"<span style="color: #000000;">, var8);
+                    }
+
+                    mbd </span>= <span style="color: #0000ff;">new</span><span style="color: #000000;"> RootBeanDefinition(pbd);
+                    mbd.overrideFrom(bd);
+                }
+                </span><span style="color: #008000;">//</span><span style="color: #008000;">这里默认设置成单例的</span>
+                <span style="color: #0000ff;">if</span> (!<span style="color: #000000;">StringUtils.hasLength(mbd.getScope())) {
+                    mbd.<span style="text-decoration: underline;"><strong><span style="background-color: #33cccc;">setScope</span></strong></span>(</span>"singleton"<span style="color: #000000;">);
+                }
+                </span><span style="color: #0000ff;">if</span> (containingBd != <span style="color: #0000ff;">null</span> &amp;&amp; !containingBd.isSingleton() &amp;&amp;<span style="color: #000000;"> mbd.isSingleton()) {
+                    mbd.setScope(containingBd.getScope());
+                }
+                </span><span style="color: #0000ff;">if</span> (containingBd == <span style="color: #0000ff;">null</span> &amp;&amp; <span style="color: #0000ff;">this</span>.isCacheBeanMetadata() &amp;&amp; <span style="color: #0000ff;">this</span><span style="color: #000000;">.isBeanEligibleForMetadataCaching(beanName)) {
+                    </span><span style="color: #0000ff;">this</span><span style="color: #000000;">.mergedBeanDefinitions.put(beanName, mbd);
+                }
+            }
+            </span><span style="color: #0000ff;">return</span><span style="color: #000000;"> mbd;
+        }
+    }</span></pre>
+</div>
+<div class="cnblogs_code">
+<pre>    <span style="color: #0000ff;">public</span> BeanDefinition <span style="text-decoration: underline;"><strong><span style="background-color: #33cccc;">getBeanDefinition</span></strong></span>(String beanName) <span style="color: #0000ff;">throws</span><span style="color: #000000;"> NoSuchBeanDefinitionException {
+        </span><span style="color: #008000;">//</span><span style="color: #008000;">不多解释，这里在容器初始化的时候进行操作</span>
+        BeanDefinition bd = (BeanDefinition)<span style="color: #0000ff;">this</span><span style="color: #000000;">.beanDefinitionMap.get(beanName);
+        </span><span style="color: #0000ff;">if</span> (bd == <span style="color: #0000ff;">null</span><span style="color: #000000;">) {
+            </span><span style="color: #0000ff;">if</span> (<span style="color: #0000ff;">this</span><span style="color: #000000;">.logger.isTraceEnabled()) {
+                </span><span style="color: #0000ff;">this</span>.logger.trace("No bean named '" + beanName + "' found in " + <span style="color: #0000ff;">this</span><span style="color: #000000;">);
+            }
+
+            </span><span style="color: #0000ff;">throw</span> <span style="color: #0000ff;">new</span><span style="color: #000000;"> NoSuchBeanDefinitionException(beanName);
+        } </span><span style="color: #0000ff;">else</span><span style="color: #000000;"> {
+            </span><span style="color: #0000ff;">return</span><span style="color: #000000;"> bd;
+        }
+    }</span></pre>
+</div>
+<p>　　c、getSingleton（这里实在调用createBean的地方）</p>
+<div class="cnblogs_code">
+<pre><span style="color: #0000ff;">public</span><span style="color: #000000;"> Object getSingleton(String beanName, ObjectFactory singletonFactory) {
+        Assert.notNull(beanName, </span>"'beanName' must not be null"<span style="color: #000000;">);
+        Map var3 </span>= <span style="color: #0000ff;">this</span><span style="color: #000000;">.singletonObjects;
+        </span><span style="color: #0000ff;">synchronized</span>(<span style="color: #0000ff;">this</span><span style="color: #000000;">.singletonObjects) {
+            Object singletonObject </span>= <span style="color: #0000ff;">this</span><span style="color: #000000;">.singletonObjects.get(beanName);
+            </span><span style="color: #0000ff;">if</span> (singletonObject == <span style="color: #0000ff;">null</span><span style="color: #000000;">) {
+                </span><span style="color: #0000ff;">if</span> (<span style="color: #0000ff;">this</span><span style="color: #000000;">.singletonsCurrentlyInDestruction) {
+                    </span><span style="color: #0000ff;">throw</span> <span style="color: #0000ff;">new</span> BeanCreationNotAllowedException(beanName, "Singleton bean creation not allowed while the singletons of this factory are in destruction (Do not request a bean from a BeanFactory in a destroy method implementation!)"<span style="color: #000000;">);
+                }
+                </span><span style="color: #0000ff;">if</span> (<span style="color: #0000ff;">this</span><span style="color: #000000;">.logger.isDebugEnabled()) {
+                    </span><span style="color: #0000ff;">this</span>.logger.debug("Creating shared instance of singleton bean '" + beanName + "'"<span style="color: #000000;">);
+                }
+                </span><span style="color: #008000;">//</span><span style="color: #008000;">创建bean之前做的操作</span>
+                <span style="color: #0000ff;">this</span><span style="color: #000000;">.<span style="text-decoration: underline;"><strong><span style="background-color: #33cccc;">beforeSingletonCreation</span></strong></span>(beanName);
+                </span><span style="color: #0000ff;">boolean</span> recordSuppressedExceptions = <span style="color: #0000ff;">this</span>.suppressedExceptions == <span style="color: #0000ff;">null</span><span style="color: #000000;">;
+                </span><span style="color: #0000ff;">if</span><span style="color: #000000;"> (recordSuppressedExceptions) {
+                    </span><span style="color: #0000ff;">this</span>.suppressedExceptions = <span style="color: #0000ff;">new</span><span style="color: #000000;"> LinkedHashSet();
+                }
+                </span><span style="color: #0000ff;">try</span><span style="color: #000000;"> {
+                    </span><span style="color: #008000;">//</span><span style="color: #008000;">这里调用createBean</span>
+                    singletonObject =<span style="color: #000000;"> singletonFactory.<span style="text-decoration: underline;"><strong><span style="background-color: #33cccc;">getObject</span></strong></span>();
+                } </span><span style="color: #0000ff;">catch</span><span style="color: #000000;"> (BeanCreationException var13) {
+                    BeanCreationException ex </span>=<span style="color: #000000;"> var13;
+                    </span><span style="color: #0000ff;">if</span><span style="color: #000000;"> (recordSuppressedExceptions) {
+                        Iterator var8 </span>= <span style="color: #0000ff;">this</span><span style="color: #000000;">.suppressedExceptions.iterator();
+
+                        </span><span style="color: #0000ff;">while</span><span style="color: #000000;">(var8.hasNext()) {
+                            Exception suppressedException </span>=<span style="color: #000000;"> (Exception)var8.next();
+                            ex.addRelatedCause(suppressedException);
+                        }
+                    }
+                    </span><span style="color: #0000ff;">throw</span><span style="color: #000000;"> ex;
+                } </span><span style="color: #0000ff;">finally</span><span style="color: #000000;"> {
+                    </span><span style="color: #0000ff;">if</span><span style="color: #000000;"> (recordSuppressedExceptions) {
+                        </span><span style="color: #0000ff;">this</span>.suppressedExceptions = <span style="color: #0000ff;">null</span><span style="color: #000000;">;
+                    }
+                    </span><span style="color: #0000ff;">this</span><span style="color: #000000;">.afterSingletonCreation(beanName);
+                }
+                </span><span style="color: #008000;">//</span><span style="color: #008000;">添加到单例的map里面（这里不细讲解）</span>
+                <span style="color: #0000ff;">this</span><span style="color: #000000;">.<span style="text-decoration: underline;"><strong><span style="background-color: #33cccc;">addSingleton</span></strong></span>(beanName, singletonObject);
+            }
+            </span><span style="color: #0000ff;">return</span> singletonObject != NULL_OBJECT ? singletonObject : <span style="color: #0000ff;">null</span><span style="color: #000000;">;
+        }
+    }</span></pre>
+</div>
+<p>　　d、createBean</p>
+<div class="cnblogs_code">
+<pre>    <span style="color: #0000ff;">protected</span> Object createBean(String beanName, RootBeanDefinition mbd, Object[] args) <span style="color: #0000ff;">throws</span><span style="color: #000000;"> BeanCreationException {
+        </span><span style="color: #0000ff;">if</span> (<span style="color: #0000ff;">this</span><span style="color: #000000;">.logger.isDebugEnabled()) {
+            </span><span style="color: #0000ff;">this</span>.logger.debug("Creating instance of bean '" + beanName + "'"<span style="color: #000000;">);
+        }
+        </span><span style="color: #008000;">//</span><span style="color: #008000;">实例化beanClass，放在mbd的beanClass下面，目前当做class被实例化在beanClass下</span>
+        <span style="color: #0000ff;">this</span>.<span style="text-decoration: underline;"><strong><span style="background-color: #33cccc;">resolveBeanClass</span></strong></span>(mbd, beanName, <span style="color: #0000ff;">new</span> Class[0<span style="color: #000000;">]);
+        </span><span style="color: #0000ff;">try</span><span style="color: #000000;"> {
+            </span><span style="color: #008000;">//</span><span style="color: #008000;">准备重写的方法，不多介绍</span>
+<span style="color: #000000;">            mbd.prepareMethodOverrides();
+        } </span><span style="color: #0000ff;">catch</span><span style="color: #000000;"> (BeanDefinitionValidationException var5) {
+            </span><span style="color: #0000ff;">throw</span> <span style="color: #0000ff;">new</span> BeanDefinitionStoreException(mbd.getResourceDescription(), beanName, "Validation of method overrides failed"<span style="color: #000000;">, var5);
+        }
+        Object beanInstance;
+        </span><span style="color: #0000ff;">try</span><span style="color: #000000;"> {
+            </span><span style="color: #008000;">//</span><span style="color: #008000;">处理InstantiationAwareBeanPostProcessor下的调用，该结构继承BeanPostProcessor</span>
+            beanInstance = <span style="color: #0000ff;">this</span><span style="color: #000000;">.<strong><span style="text-decoration: underline;"><span style="background-color: #33cccc;">resolveBeforeInstantiation</span></span></strong>(beanName, mbd);
+            </span><span style="color: #0000ff;">if</span> (beanInstance != <span style="color: #0000ff;">null</span><span style="color: #000000;">) {
+                </span><span style="color: #0000ff;">return</span><span style="color: #000000;"> beanInstance;
+            }
+        } </span><span style="color: #0000ff;">catch</span><span style="color: #000000;"> (Throwable var6) {
+            </span><span style="color: #0000ff;">throw</span> <span style="color: #0000ff;">new</span> BeanCreationException(mbd.getResourceDescription(), beanName, "BeanPostProcessor before instantiation of bean failed"<span style="color: #000000;">, var6);
+        }
+        </span><span style="color: #008000;">//</span><span style="color: #008000;">这里主要是做一些初始化的操作等</span>
+        beanInstance = <span style="color: #0000ff;">this</span><span style="color: #000000;">.<span style="text-decoration: underline;"><span style="background-color: #33cccc;">doCreateBean</span></span>(beanName, mbd, args);
+        </span><span style="color: #0000ff;">if</span> (<span style="color: #0000ff;">this</span><span style="color: #000000;">.logger.isDebugEnabled()) {
+            </span><span style="color: #0000ff;">this</span>.logger.debug("Finished creating instance of bean '" + beanName + "'"<span style="color: #000000;">);
+        }
+        </span><span style="color: #0000ff;">return</span><span style="color: #000000;"> beanInstance;
+    }</span></pre>
+</div>
+<p>　　d.1&nbsp;resolveBeanClass</p>
+<div class="cnblogs_code">
+<pre>    <span style="color: #0000ff;">protected</span> Class resolveBeanClass(<span style="color: #0000ff;">final</span> RootBeanDefinition mbd, String beanName, <span style="color: #0000ff;">final</span> Class... typesToMatch) <span style="color: #0000ff;">throws</span><span style="color: #000000;"> CannotLoadBeanClassException {
+        </span><span style="color: #0000ff;">try</span><span style="color: #000000;"> {
+            </span><span style="color: #0000ff;">if</span><span style="color: #000000;"> (mbd.hasBeanClass()) {
+                </span><span style="color: #0000ff;">return</span><span style="color: #000000;"> mbd.getBeanClass();
+            } </span><span style="color: #0000ff;">else</span><span style="color: #000000;"> {
+                </span><span style="color: #0000ff;">return</span> System.getSecurityManager() != <span style="color: #0000ff;">null</span> ? (Class) AccessController.doPrivileged(<span style="color: #0000ff;">new</span> PrivilegedExceptionAction&lt;Class&gt;<span style="color: #000000;">() {
+                    </span><span style="color: #0000ff;">public</span> Class run() <span style="color: #0000ff;">throws</span><span style="color: #000000;"> Exception {
+                        </span><span style="color: #0000ff;">return</span> AbstractBeanFactory.<span style="color: #0000ff;">this</span><span style="color: #000000;">.doResolveBeanClass(mbd, typesToMatch);
+                    }
+                </span><span style="color: #008000;">//</span><span style="color: #008000;">不存在beanClass的时候调用    </span>
+                }, <span style="color: #0000ff;">this</span>.getAccessControlContext()) : <span style="color: #0000ff;">this</span><span style="color: #000000;">.doResolveBeanClass(mbd, typesToMatch);
+            }
+        } </span><span style="color: #0000ff;">catch</span><span style="color: #000000;"> (PrivilegedActionException var6) {
+            ClassNotFoundException ex </span>=<span style="color: #000000;"> (ClassNotFoundException)var6.getException();
+            </span><span style="color: #0000ff;">throw</span> <span style="color: #0000ff;">new</span><span style="color: #000000;"> CannotLoadBeanClassException(mbd.getResourceDescription(), beanName, mbd.getBeanClassName(), ex);
+        } </span><span style="color: #0000ff;">catch</span><span style="color: #000000;"> (ClassNotFoundException var7) {
+            </span><span style="color: #0000ff;">throw</span> <span style="color: #0000ff;">new</span><span style="color: #000000;"> CannotLoadBeanClassException(mbd.getResourceDescription(), beanName, mbd.getBeanClassName(), var7);
+        } </span><span style="color: #0000ff;">catch</span><span style="color: #000000;"> (LinkageError var8) {
+            </span><span style="color: #0000ff;">throw</span> <span style="color: #0000ff;">new</span><span style="color: #000000;"> CannotLoadBeanClassException(mbd.getResourceDescription(), beanName, mbd.getBeanClassName(), var8);
+        }
+    }
+    </span><span style="color: #0000ff;">private</span> Class doResolveBeanClass(RootBeanDefinition mbd, Class... typesToMatch) <span style="color: #0000ff;">throws</span><span style="color: #000000;"> ClassNotFoundException {
+        </span><span style="color: #0000ff;">if</span> (!<span style="color: #000000;">ObjectUtils.isEmpty(typesToMatch)) {
+            ClassLoader tempClassLoader </span>= <span style="color: #0000ff;">this</span><span style="color: #000000;">.getTempClassLoader();
+            </span><span style="color: #0000ff;">if</span> (tempClassLoader != <span style="color: #0000ff;">null</span><span style="color: #000000;">) {
+                </span><span style="color: #0000ff;">if</span> (tempClassLoader <span style="color: #0000ff;">instanceof</span><span style="color: #000000;"> DecoratingClassLoader) {
+                    DecoratingClassLoader dcl </span>=<span style="color: #000000;"> (DecoratingClassLoader)tempClassLoader;
+                    Class[] var8 </span>=<span style="color: #000000;"> typesToMatch;
+                    </span><span style="color: #0000ff;">int</span> var7 =<span style="color: #000000;"> typesToMatch.length;
+                    </span><span style="color: #0000ff;">for</span>(<span style="color: #0000ff;">int</span> var6 = 0; var6 &lt; var7; ++<span style="color: #000000;">var6) {
+                        Class</span>&lt;?&gt; typeToMatch =<span style="color: #000000;"> var8[var6];
+                        dcl.excludeClass(typeToMatch.getName());
+                    }
+                }
+                String className </span>=<span style="color: #000000;"> mbd.getBeanClassName();
+                </span><span style="color: #0000ff;">return</span> className != <span style="color: #0000ff;">null</span> ? ClassUtils.forName(className, tempClassLoader) : <span style="color: #0000ff;">null</span><span style="color: #000000;">;
+            }
+        }
+        </span><span style="color: #008000;">//</span><span style="color: #008000;">这里应为typesToMatch不为空，所以走这里</span>
+        <span style="color: #0000ff;">return</span> mbd.resolveBeanClass(<span style="color: #0000ff;">this</span><span style="color: #000000;">.getBeanClassLoader());
+    }
+    </span><span style="color: #0000ff;">public</span> Class resolveBeanClass(ClassLoader classLoader) <span style="color: #0000ff;">throws</span><span style="color: #000000;"> ClassNotFoundException {
+        String className </span>= <span style="color: #0000ff;">this</span><span style="color: #000000;">.getBeanClassName();
+        </span><span style="color: #0000ff;">if</span> (className == <span style="color: #0000ff;">null</span><span style="color: #000000;">) {
+            </span><span style="color: #0000ff;">return</span> <span style="color: #0000ff;">null</span><span style="color: #000000;">;
+        } </span><span style="color: #0000ff;">else</span><span style="color: #000000;"> {
+            </span><span style="color: #008000;">//</span><span style="color: #008000;">通过反射创建实例</span>
+            Class resolvedClass =<span style="color: #000000;"> ClassUtils.forName(className, classLoader);
+            </span><span style="color: #0000ff;">this</span>.beanClass =<span style="color: #000000;"> resolvedClass;
+            </span><span style="color: #0000ff;">return</span><span style="color: #000000;"> resolvedClass;
+        }
+    }</span></pre>
+</div>
+<p>　　d.2&nbsp;resolveBeforeInstantiation（不多解释）</p>
+<div class="cnblogs_code">
+<pre>    <span style="color: #0000ff;">protected</span><span style="color: #000000;"> Object resolveBeforeInstantiation(String beanName, RootBeanDefinition mbd) {
+        Object bean </span>= <span style="color: #0000ff;">null</span><span style="color: #000000;">;
+        </span><span style="color: #0000ff;">if</span> (!<span style="color: #000000;">Boolean.FALSE.equals(mbd.beforeInstantiationResolved)) {
+            </span><span style="color: #0000ff;">if</span> (mbd.hasBeanClass() &amp;&amp; !mbd.isSynthetic() &amp;&amp; <span style="color: #0000ff;">this</span><span style="color: #000000;">.hasInstantiationAwareBeanPostProcessors()) {
+                bean </span>= <span style="color: #0000ff;">this</span><span style="color: #000000;">.applyBeanPostProcessorsBeforeInstantiation(mbd.getBeanClass(), beanName);
+                </span><span style="color: #0000ff;">if</span> (bean != <span style="color: #0000ff;">null</span><span style="color: #000000;">) {
+                    bean </span>= <span style="color: #0000ff;">this</span><span style="color: #000000;">.applyBeanPostProcessorsAfterInitialization(bean, beanName);
+                }
+            }
+
+            mbd.beforeInstantiationResolved </span>= bean != <span style="color: #0000ff;">null</span><span style="color: #000000;">;
+        }
+
+        </span><span style="color: #0000ff;">return</span><span style="color: #000000;"> bean;
+    }</span></pre>
+</div>
+<p>　　d.3&nbsp;doCreateBean</p>
+<div class="cnblogs_code">
+<pre><span style="color: #0000ff;">　　 protected</span> Object doCreateBean(<span style="color: #0000ff;">final</span> String beanName, <span style="color: #0000ff;">final</span><span style="color: #000000;"> RootBeanDefinition mbd, Object[] args) {
+        BeanWrapper instanceWrapper </span>= <span style="color: #0000ff;">null</span><span style="color: #000000;">;
+        </span><span style="color: #0000ff;">if</span><span style="color: #000000;"> (mbd.isSingleton()) {
+            instanceWrapper </span>= (BeanWrapper)<span style="color: #0000ff;">this</span><span style="color: #000000;">.factoryBeanInstanceCache.remove(beanName);
+        }
+        </span><span style="color: #0000ff;">if</span> (instanceWrapper == <span style="color: #0000ff;">null</span><span style="color: #000000;">) {
+            instanceWrapper </span>= <span style="color: #0000ff;">this</span><span style="color: #000000;">.createBeanInstance(beanName, mbd, args);
+        }
+        </span><span style="color: #0000ff;">final</span> Object bean = instanceWrapper != <span style="color: #0000ff;">null</span> ? instanceWrapper.getWrappedInstance() : <span style="color: #0000ff;">null</span><span style="color: #000000;">;
+        Class beanType </span>= instanceWrapper != <span style="color: #0000ff;">null</span> ? instanceWrapper.getWrappedClass() : <span style="color: #0000ff;">null</span><span style="color: #000000;">;
+        Object var7 </span>=<span style="color: #000000;"> mbd.postProcessingLock;
+        </span><span style="color: #0000ff;">synchronized</span><span style="color: #000000;">(mbd.postProcessingLock) {
+            </span><span style="color: #0000ff;">if</span> (!<span style="color: #000000;">mbd.postProcessed) {
+                </span><span style="color: #008000;">//</span><span style="color: #008000;">这里的处理方式和c.2的处理方式类似</span>
+                <span style="color: #0000ff;">this</span><span style="color: #000000;">.applyMergedBeanDefinitionPostProcessors(mbd, beanType, beanName);
+                mbd.postProcessed </span>= <span style="color: #0000ff;">true</span><span style="color: #000000;">;
+            }
+        }
+        </span><span style="color: #0000ff;">boolean</span> earlySingletonExposure = mbd.isSingleton() &amp;&amp; <span style="color: #0000ff;">this</span>.allowCircularReferences &amp;&amp; <span style="color: #0000ff;">this</span><span style="color: #000000;">.isSingletonCurrentlyInCreation(beanName);
+        </span><span style="color: #0000ff;">if</span><span style="color: #000000;"> (earlySingletonExposure) {
+            </span><span style="color: #0000ff;">if</span> (<span style="color: #0000ff;">this</span><span style="color: #000000;">.logger.isDebugEnabled()) {
+                </span><span style="color: #0000ff;">this</span>.logger.debug("Eagerly caching bean '" + beanName + "' to allow for resolving potential circular references"<span style="color: #000000;">);
+            }
+            </span><span style="color: #0000ff;">this</span>.addSingletonFactory(beanName, <span style="color: #0000ff;">new</span><span style="color: #000000;"> ObjectFactory() {
+                </span><span style="color: #0000ff;">public</span> Object getObject() <span style="color: #0000ff;">throws</span><span style="color: #000000;"> BeansException {
+                    </span><span style="color: #0000ff;">return</span> AbstractAutowireCapableBeanFactory.<span style="color: #0000ff;">this</span><span style="color: #000000;">.getEarlyBeanReference(beanName, mbd, bean);
+                }
+            });
+        }
+        Object exposedObject </span>=<span style="color: #000000;"> bean;
+        </span><span style="color: #0000ff;">try</span><span style="color: #000000;"> {
+            </span><span style="color: #0000ff;">this</span><span style="color: #000000;">.populateBean(beanName, mbd, instanceWrapper);
+            </span><span style="color: #0000ff;">if</span> (exposedObject != <span style="color: #0000ff;">null</span><span style="color: #000000;">) {
+                </span><span style="color: #008000;">//</span><span style="color: #008000;">这里就是初始化的方法了</span>
+                exposedObject = <span style="color: #0000ff;">this</span><span style="color: #000000;">.<span style="text-decoration: underline;"><strong><span style="background-color: #33cccc;">initializeBean</span></strong></span>(beanName, exposedObject, mbd);
+            }
+        } </span><span style="color: #0000ff;">catch</span><span style="color: #000000;"> (Throwable var17) {
+            </span><span style="color: #0000ff;">if</span> (var17 <span style="color: #0000ff;">instanceof</span> BeanCreationException &amp;&amp;<span style="color: #000000;"> beanName.equals(((BeanCreationException)var17).getBeanName())) {
+                </span><span style="color: #0000ff;">throw</span><span style="color: #000000;"> (BeanCreationException)var17;
+            }
+            </span><span style="color: #0000ff;">throw</span> <span style="color: #0000ff;">new</span> BeanCreationException(mbd.getResourceDescription(), beanName, "Initialization of bean failed"<span style="color: #000000;">, var17);
+        }
+        </span><span style="color: #0000ff;">if</span><span style="color: #000000;"> (earlySingletonExposure) {
+            Object earlySingletonReference </span>= <span style="color: #0000ff;">this</span>.getSingleton(beanName, <span style="color: #0000ff;">false</span><span style="color: #000000;">);
+            </span><span style="color: #0000ff;">if</span> (earlySingletonReference != <span style="color: #0000ff;">null</span><span style="color: #000000;">) {
+                </span><span style="color: #0000ff;">if</span> (exposedObject ==<span style="color: #000000;"> bean) {
+                    exposedObject </span>=<span style="color: #000000;"> earlySingletonReference;
+                } </span><span style="color: #0000ff;">else</span> <span style="color: #0000ff;">if</span> (!<span style="color: #0000ff;">this</span>.allowRawInjectionDespiteWrapping &amp;&amp; <span style="color: #0000ff;">this</span><span style="color: #000000;">.hasDependentBean(beanName)) {
+                    String[] dependentBeans </span>= <span style="color: #0000ff;">this</span><span style="color: #000000;">.getDependentBeans(beanName);
+                    Set</span>&lt;String&gt; actualDependentBeans = <span style="color: #0000ff;">new</span><span style="color: #000000;"> LinkedHashSet(dependentBeans.length);
+                    String[] var15 </span>=<span style="color: #000000;"> dependentBeans;
+                    </span><span style="color: #0000ff;">int</span> var14 =<span style="color: #000000;"> dependentBeans.length;
+                    </span><span style="color: #0000ff;">for</span>(<span style="color: #0000ff;">int</span> var13 = 0; var13 &lt; var14; ++<span style="color: #000000;">var13) {
+                        String dependentBean </span>=<span style="color: #000000;"> var15[var13];
+                        </span><span style="color: #0000ff;">if</span> (!<span style="color: #0000ff;">this</span><span style="color: #000000;">.removeSingletonIfCreatedForTypeCheckOnly(dependentBean)) {
+                            actualDependentBeans.add(dependentBean);
+                        }
+                    }
+                    </span><span style="color: #0000ff;">if</span> (!<span style="color: #000000;">actualDependentBeans.isEmpty()) {
+                        </span><span style="color: #0000ff;">throw</span> <span style="color: #0000ff;">new</span> BeanCurrentlyInCreationException(beanName, "Bean with name '" + beanName + "' has been injected into other beans [" + StringUtils.collectionToCommaDelimitedString(actualDependentBeans) + "] in its raw version as part of a circular reference, but has eventually been " + "wrapped. This means that said other beans do not use the final version of the " + "bean. This is often the result of over-eager type matching - consider using " + "'getBeanNamesOfType' with the 'allowEagerInit' flag turned off, for example."<span style="color: #000000;">);
+                    }
+                }
+            }
+        }
+        </span><span style="color: #0000ff;">try</span><span style="color: #000000;"> {
+            </span><span style="color: #0000ff;">this</span><span style="color: #000000;">.registerDisposableBeanIfNecessary(beanName, bean, mbd);
+            </span><span style="color: #0000ff;">return</span><span style="color: #000000;"> exposedObject;
+        } </span><span style="color: #0000ff;">catch</span><span style="color: #000000;"> (BeanDefinitionValidationException var16) {
+            </span><span style="color: #0000ff;">throw</span> <span style="color: #0000ff;">new</span> BeanCreationException(mbd.getResourceDescription(), beanName, "Invalid destruction signature"<span style="color: #000000;">, var16);
+        }
+    }</span></pre>
+</div>
+<div class="cnblogs_code">
+<pre><span style="color: #0000ff;">　　 protected</span> Object initializeBean(<span style="color: #0000ff;">final</span> String beanName, <span style="color: #0000ff;">final</span><span style="color: #000000;"> Object bean, RootBeanDefinition mbd) {
+        </span><span style="color: #0000ff;">if</span> (System.getSecurityManager() != <span style="color: #0000ff;">null</span><span style="color: #000000;">) {
+            AccessController.doPrivileged(</span><span style="color: #0000ff;">new</span> PrivilegedAction&lt;Object&gt;<span style="color: #000000;">() {
+                </span><span style="color: #0000ff;">public</span><span style="color: #000000;"> Object run() {
+                    AbstractAutowireCapableBeanFactory.</span><span style="color: #0000ff;">this</span><span style="color: #000000;">.invokeAwareMethods(beanName, bean);
+                    </span><span style="color: #0000ff;">return</span> <span style="color: #0000ff;">null</span><span style="color: #000000;">;
+                }
+            }, </span><span style="color: #0000ff;">this</span><span style="color: #000000;">.getAccessControlContext());
+        } </span><span style="color: #0000ff;">else</span><span style="color: #000000;"> {
+            </span><span style="color: #0000ff;">this</span><span style="color: #000000;">.invokeAwareMethods(beanName, bean);
+        }
+        Object wrappedBean </span>=<span style="color: #000000;"> bean;
+        </span><span style="color: #0000ff;">if</span> (mbd == <span style="color: #0000ff;">null</span> || !<span style="color: #000000;">mbd.isSynthetic()) {
+            </span><span style="color: #008000;">//</span><span style="color: #008000;">执行BeanPostProcessors的postProcessBeforeInitialization方法</span>
+            wrappedBean = <span style="color: #0000ff;">this</span><span style="color: #000000;">.<span style="text-decoration: underline;"><strong><span style="background-color: #33cccc;">applyBeanPostProcessorsBeforeInitialization</span></strong></span>(bean, beanName);
+        }
+        </span><span style="color: #0000ff;">try</span><span style="color: #000000;"> {
+            </span><span style="color: #008000;">//</span><span style="color: #008000;">执行实现InitializingBean，和init-method标签的内容</span>
+            <span style="color: #0000ff;">this</span><span style="color: #000000;">.<span style="text-decoration: underline;"><strong><span style="background-color: #33cccc;">invokeInitMethods</span></strong></span>(beanName, wrappedBean, mbd);
+        } </span><span style="color: #0000ff;">catch</span><span style="color: #000000;"> (Throwable var6) {
+            </span><span style="color: #0000ff;">throw</span> <span style="color: #0000ff;">new</span> BeanCreationException(mbd != <span style="color: #0000ff;">null</span> ? mbd.getResourceDescription() : <span style="color: #0000ff;">null</span>, beanName, "Invocation of init method failed"<span style="color: #000000;">, var6);
+        }
+        </span><span style="color: #0000ff;">if</span> (mbd == <span style="color: #0000ff;">null</span> || !<span style="color: #000000;">mbd.isSynthetic()) {
+            </span><span style="color: #008000;">//</span><span style="color: #008000;">执行BeanPostProcessors的postProcessAfterInitialization方法</span>
+            wrappedBean = <span style="color: #0000ff;">this</span><span style="color: #000000;">.<span style="text-decoration: underline;"><strong><span style="background-color: #33cccc;">applyBeanPostProcessorsAfterInitialization</span></strong></span>(wrappedBean, beanName);
+        }
+        </span><span style="color: #0000ff;">return</span><span style="color: #000000;"> wrappedBean;
+    }</span></pre>
+</div>
+<div class="cnblogs_code">
+<pre><span style="color: #0000ff;">　　 public</span> Object <span style="text-decoration: underline;"><strong><span style="background-color: #33cccc;">applyBeanPostProcessorsBeforeInitialization</span></strong></span>(Object existingBean, String beanName) <span style="color: #0000ff;">throws</span><span style="color: #000000;"> BeansException {
+        Object result </span>=<span style="color: #000000;"> existingBean;
+        Iterator var5 </span>= <span style="color: #0000ff;">this</span><span style="color: #000000;">.getBeanPostProcessors().iterator();
+        </span><span style="color: #0000ff;">while</span><span style="color: #000000;">(var5.hasNext()) {
+            BeanPostProcessor beanProcessor </span>=<span style="color: #000000;"> (BeanPostProcessor)var5.next();
+            result </span>=<span style="color: #000000;"> beanProcessor.postProcessBeforeInitialization(result, beanName);
+            </span><span style="color: #0000ff;">if</span> (result == <span style="color: #0000ff;">null</span><span style="color: #000000;">) {
+                </span><span style="color: #0000ff;">return</span><span style="color: #000000;"> result;
+            }
+        }
+        </span><span style="color: #0000ff;">return</span><span style="color: #000000;"> result;
+    }</span></pre>
+</div>
+<div class="cnblogs_code">
+<pre><span style="color: #0000ff;">public</span> Object <span style="text-decoration: underline;"><strong><span style="background-color: #33cccc;">applyBeanPostProcessorsAfterInitialization</span></strong></span>(Object existingBean, String beanName) <span style="color: #0000ff;">throws</span><span style="color: #000000;"> BeansException {
+        Object result </span>=<span style="color: #000000;"> existingBean;
+        Iterator var5 </span>= <span style="color: #0000ff;">this</span><span style="color: #000000;">.getBeanPostProcessors().iterator();
+        </span><span style="color: #0000ff;">while</span><span style="color: #000000;">(var5.hasNext()) {
+            BeanPostProcessor beanProcessor </span>=<span style="color: #000000;"> (BeanPostProcessor)var5.next();
+            result </span>=<span style="color: #000000;"> beanProcessor.postProcessAfterInitialization(result, beanName);
+            </span><span style="color: #0000ff;">if</span> (result == <span style="color: #0000ff;">null</span><span style="color: #000000;">) {
+                </span><span style="color: #0000ff;">return</span><span style="color: #000000;"> result;
+            }
+        }
+        </span><span style="color: #0000ff;">return</span><span style="color: #000000;"> result;
+    }</span></pre>
+</div>
+<div class="cnblogs_code">
+<pre><span style="color: #0000ff;">　　protected</span> <span style="color: #0000ff;">void</span> <span style="text-decoration: underline;"><strong><span style="background-color: #33cccc;">invokeInitMethods</span></strong></span>(String beanName, <span style="color: #0000ff;">final</span> Object bean, RootBeanDefinition mbd) <span style="color: #0000ff;">throws</span><span style="color: #000000;"> Throwable {
+        </span><span style="color: #0000ff;">boolean</span> isInitializingBean = bean <span style="color: #0000ff;">instanceof</span><span style="color: #000000;"> InitializingBean;
+        </span><span style="color: #0000ff;">if</span> (isInitializingBean &amp;&amp; (mbd == <span style="color: #0000ff;">null</span> || !mbd.isExternallyManagedInitMethod("afterPropertiesSet"<span style="color: #000000;">))) {
+            </span><span style="color: #0000ff;">if</span> (<span style="color: #0000ff;">this</span><span style="color: #000000;">.logger.isDebugEnabled()) {
+                </span><span style="color: #0000ff;">this</span>.logger.debug("Invoking afterPropertiesSet() on bean with name '" + beanName + "'"<span style="color: #000000;">);
+            }
+            </span><span style="color: #0000ff;">if</span> (System.getSecurityManager() != <span style="color: #0000ff;">null</span><span style="color: #000000;">) {
+                </span><span style="color: #0000ff;">try</span><span style="color: #000000;"> {
+                    AccessController.doPrivileged(</span><span style="color: #0000ff;">new</span> PrivilegedExceptionAction&lt;Object&gt;<span style="color: #000000;">() {
+                        </span><span style="color: #0000ff;">public</span> Object run() <span style="color: #0000ff;">throws</span><span style="color: #000000;"> Exception {
+                            ((InitializingBean)bean).afterPropertiesSet();
+                            </span><span style="color: #0000ff;">return</span> <span style="color: #0000ff;">null</span><span style="color: #000000;">;
+                        }
+                    }, </span><span style="color: #0000ff;">this</span><span style="color: #000000;">.getAccessControlContext());
+                } </span><span style="color: #0000ff;">catch</span><span style="color: #000000;"> (PrivilegedActionException var6) {
+                    </span><span style="color: #0000ff;">throw</span><span style="color: #000000;"> var6.getException();
+                }
+            } </span><span style="color: #0000ff;">else</span><span style="color: #000000;"> {
+                </span><span style="color: #008000;">//</span><span style="color: #008000;">调用InitializingBean接口的afterPropertiesSet方法，初始化</span>
+<span style="color: #000000;">                ((InitializingBean)bean).afterPropertiesSet();
+            }
+        }
+        </span><span style="color: #0000ff;">if</span> (mbd != <span style="color: #0000ff;">null</span><span style="color: #000000;">) {
+            String initMethodName </span>=<span style="color: #000000;"> mbd.getInitMethodName();
+            </span><span style="color: #0000ff;">if</span> (initMethodName != <span style="color: #0000ff;">null</span> &amp;&amp; (!isInitializingBean || !"afterPropertiesSet".equals(initMethodName)) &amp;&amp; !<span style="color: #000000;">mbd.isExternallyManagedInitMethod(initMethodName)) {
+                </span><span style="color: #008000;">//</span><span style="color: #008000;">执行init-method的方法，如果afterPropertiesSet执行出现异常，是不会执行init-method的方法的</span>
+                <span style="color: #0000ff;">this</span><span style="color: #000000;">.<span style="text-decoration: underline;"><strong><span style="background-color: #33cccc;">invokeCustomInitMethod</span></strong></span>(beanName, bean, mbd);
+            }
+        }
+    }
+
+    </span><span style="color: #0000ff;">protected</span> <span style="color: #0000ff;">void</span> <span style="text-decoration: underline;"><strong><span style="background-color: #33cccc;">invokeCustomInitMethod</span></strong></span>(String beanName, <span style="color: #0000ff;">final</span> Object bean, RootBeanDefinition mbd) <span style="color: #0000ff;">throws</span><span style="color: #000000;"> Throwable {
+        String initMethodName </span>=<span style="color: #000000;"> mbd.getInitMethodName();
+        </span><span style="color: #0000ff;">final</span> Method initMethod = mbd.isNonPublicAccessAllowed() ? BeanUtils.findMethod(bean.getClass(), initMethodName, <span style="color: #0000ff;">new</span> Class[0]) : ClassUtils.getMethodIfAvailable(bean.getClass(), initMethodName, <span style="color: #0000ff;">new</span> Class[0<span style="color: #000000;">]);
+        </span><span style="color: #0000ff;">if</span> (initMethod == <span style="color: #0000ff;">null</span><span style="color: #000000;">) {
+            </span><span style="color: #0000ff;">if</span><span style="color: #000000;"> (mbd.isEnforceInitMethod()) {
+                </span><span style="color: #0000ff;">throw</span> <span style="color: #0000ff;">new</span> BeanDefinitionValidationException("Couldn't find an init method named '" + initMethodName + "' on bean with name '" + beanName + "'"<span style="color: #000000;">);
+            } </span><span style="color: #0000ff;">else</span><span style="color: #000000;"> {
+                </span><span style="color: #0000ff;">if</span> (<span style="color: #0000ff;">this</span><span style="color: #000000;">.logger.isDebugEnabled()) {
+                    </span><span style="color: #0000ff;">this</span>.logger.debug("No default init method named '" + initMethodName + "' found on bean with name '" + beanName + "'"<span style="color: #000000;">);
+                }
+            }
+        } </span><span style="color: #0000ff;">else</span><span style="color: #000000;"> {
+            </span><span style="color: #0000ff;">if</span> (<span style="color: #0000ff;">this</span><span style="color: #000000;">.logger.isDebugEnabled()) {
+                </span><span style="color: #0000ff;">this</span>.logger.debug("Invoking init method  '" + initMethodName + "' on bean with name '" + beanName + "'"<span style="color: #000000;">);
+            }
+            </span><span style="color: #0000ff;">if</span> (System.getSecurityManager() != <span style="color: #0000ff;">null</span><span style="color: #000000;">) {
+                AccessController.doPrivileged(</span><span style="color: #0000ff;">new</span> PrivilegedExceptionAction&lt;Object&gt;<span style="color: #000000;">() {
+                    </span><span style="color: #0000ff;">public</span> Object run() <span style="color: #0000ff;">throws</span><span style="color: #000000;"> Exception {
+                        ReflectionUtils.makeAccessible(initMethod);
+                        </span><span style="color: #0000ff;">return</span> <span style="color: #0000ff;">null</span><span style="color: #000000;">;
+                    }
+                });
+                </span><span style="color: #0000ff;">try</span><span style="color: #000000;"> {
+                    AccessController.doPrivileged(</span><span style="color: #0000ff;">new</span> PrivilegedExceptionAction&lt;Object&gt;<span style="color: #000000;">() {
+                        </span><span style="color: #0000ff;">public</span> Object run() <span style="color: #0000ff;">throws</span><span style="color: #000000;"> Exception {
+                            initMethod.invoke(bean);
+                            </span><span style="color: #0000ff;">return</span> <span style="color: #0000ff;">null</span><span style="color: #000000;">;
+                        }
+                    }, </span><span style="color: #0000ff;">this</span><span style="color: #000000;">.getAccessControlContext());
+                } </span><span style="color: #0000ff;">catch</span><span style="color: #000000;"> (PrivilegedActionException var9) {
+                    InvocationTargetException ex </span>=<span style="color: #000000;"> (InvocationTargetException)var9.getException();
+                    </span><span style="color: #0000ff;">throw</span><span style="color: #000000;"> ex.getTargetException();
+                }
+            } </span><span style="color: #0000ff;">else</span><span style="color: #000000;"> {
+                </span><span style="color: #0000ff;">try</span><span style="color: #000000;"> {
+                    ReflectionUtils.makeAccessible(initMethod);
+                    </span><span style="color: #008000;">//</span><span style="color: #008000;">执行方法</span>
+<span style="color: #000000;">                    initMethod.<span style="text-decoration: underline;"><strong><span style="background-color: #33cccc;">invoke</span></strong></span>(bean);
+                } </span><span style="color: #0000ff;">catch</span><span style="color: #000000;"> (InvocationTargetException var8) {
+                    </span><span style="color: #0000ff;">throw</span><span style="color: #000000;"> var8.getTargetException();
+                }
+            }
+
+        }
+    }</span></pre>
+</div>
+<p>　　d.4 创建bean的过程结束了，这里主要的目的是初始化。</p>
+<p>　　四、bean的加载基本上就是这样了，不过还是梳理一下比较好</p>
+<p>　　1）通过<strong>getBean</strong>的方式进行，进行bean的获取</p>
+<p>　　2）bean的获取现从<strong>singletonObjects</strong>中获取，如果没有在进行<strong>createBean</strong></p>
+<p><strong>　　</strong>3）bean的获取是从<strong>beanDefinitionMap</strong>里面开始的，获取到对应的<strong>BeanDefinition</strong>，然后在进行处理</p>
+<p>　　4）<strong>createBean</strong>的过程中是实例化了bean并放入<strong>BeanDefinition</strong>的，然后进行了各种初始化</p>
+<p>　　5）在调用<strong>createBean</strong>的结束的时候在将bean放入了<strong>singletonObjects</strong>单例里面，这个实在源码解析c中描述的</p>
+<p>　　6）将获得bean进行返回，如果存在class类型，则适配返回，没有就object</p>
+<p>　　五、bean的加载过程基本上流程就这样，当然源码的解析过程，是比较痛苦的，但是在实现他的每一个实现都有他的意义。我这里只是更明显的阐述，实际的调用过程。当然这只是开始，后续的东西都是以此基础来进行拓展的。特别是在自定义标签环节。基本上拓展的新功能，都是在自定义标签下面实现的。</p>
+<p>　　六、bean的基本过程就是这样子了，然后就是后续的拓展功能，bean的增强化，还是自定义标签的使用上面，后续都会一一呈现，目的是更好的理解spring的拓展性和易用性</p>
