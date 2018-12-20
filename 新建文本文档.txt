@@ -1,0 +1,1 @@
+INSERT INTO `iems_sm_resource_t` (`srcid`, `urlregular`, `methodetype`, `urltype`) VALUES ('alarm_management', 'devAlarmgetCountByAlarmTypeApp', 'post', 'rest');
